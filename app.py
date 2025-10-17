@@ -1,8 +1,10 @@
 """
 Lead Intelligence API - Complete Platform v3.0.0
 Combines ML Lead Scoring + Geographical Analysis + Executive Dashboard
+Production-Ready for Render Deployment
 """
 
+import os
 from fastapi import FastAPI, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic_settings import BaseSettings
@@ -21,21 +23,29 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# SETTINGS
+# SETTINGS (Updated for Render Deployment)
 # ============================================================================
 
 class Settings(BaseSettings):
-    DATABASE_SERVER: str = Field(..., env='DATABASE_SERVER')
-    DATABASE_NAME: str = Field(..., env='DATABASE_NAME')
-    DATABASE_USERNAME: str = Field(..., env='DATABASE_USERNAME')
-    DATABASE_PASSWORD: str = Field(..., env='DATABASE_PASSWORD')
+    # Database Configuration with Default Values (for Render)
+    DATABASE_SERVER: str = Field(default="auto.resourceplus.app", env='DATABASE_SERVER')
+    DATABASE_NAME: str = Field(default="ResourcePlus_Dev_Live", env='DATABASE_NAME')
+    DATABASE_USERNAME: str = Field(default="ResourcePlus_BI", env='DATABASE_USERNAME')
+    DATABASE_PASSWORD: str = Field(default="kN5yT#9mP@7qL2wX", env='DATABASE_PASSWORD')
+    
+    # API Configuration
     API_TITLE: str = Field(default="Lead Intelligence API", env='API_TITLE')
     API_VERSION: str = Field(default="3.0.0", env='API_VERSION')
     
     class Config:
         env_file = ".env"
+        env_file_encoding = 'utf-8'
+        extra = "allow"
 
 settings = Settings()
+
+logger.info(f"🔧 Database Server: {settings.DATABASE_SERVER}")
+logger.info(f"🔧 Database: {settings.DATABASE_NAME}")
 
 
 # ============================================================================
@@ -47,17 +57,40 @@ app = FastAPI(
     version=settings.API_VERSION,
     description="🎯 **Complete Lead Intelligence Platform** - ML Lead Scoring, Churn Prediction, Segmentation, Recommendations, Geographical Market Analysis + Executive Dashboard Analytics",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    contact={
+        "name": "Lead Intelligence Team",
+        "email": "support@leadintelligence.com"
+    }
 )
 
-# CORS
+# CORS (Enable Cross-Origin Requests for Frontend)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # For production, replace with your frontend domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ============================================================================
+# STARTUP & SHUTDOWN EVENTS
+# ============================================================================
+
+@app.on_event("startup")
+async def startup_event():
+    """Run on application startup"""
+    logger.info("=" * 60)
+    logger.info(f"🚀 {settings.API_TITLE} v{settings.API_VERSION} Starting...")
+    logger.info(f"📊 Database: {settings.DATABASE_SERVER}/{settings.DATABASE_NAME}")
+    logger.info("=" * 60)
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Run on application shutdown"""
+    logger.info(f"🛑 {settings.API_TITLE} shutting down...")
 
 
 # ============================================================================
@@ -583,7 +616,9 @@ def get_dashboard_funnel(date_filter: str = Query(default='year')):
         return {
             'status': 'success',
             'funnel': dashboard['funnel'],
-            'total_leads': sum([stage['count'] for stage in dashboard['funnel']]),
+            'total_leads': dashboard.get('total_leads', 0),
+            'total_converted': dashboard.get('total_converted', 0),
+            'overall_conversion_rate': dashboard.get('overall_conversion_rate', 0.0),
             'timestamp': datetime.now().isoformat()
         }
     except Exception as e:
@@ -662,9 +697,17 @@ def get_executive_summary(
 
 
 # ============================================================================
-# RUN SERVER
+# RUN SERVER (Updated for Render Deployment)
 # ============================================================================
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Use PORT environment variable from Render, fallback to 8000 for local development
+    port = int(os.environ.get("PORT", 8000))
+    logger.info(f"🚀 Starting server on port {port}")
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=port, 
+        log_level="info"
+    )
