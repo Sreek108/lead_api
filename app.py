@@ -1,10 +1,8 @@
 """
-Lead Intelligence API - Complete Platform v3.0.0
-Combines ML Lead Scoring + Geographical Analysis + Executive Dashboard
-Production-Ready for Render Deployment
+Lead Intelligence API - Complete Platform v4.0.0
+Combines ML Lead Scoring + Geographical Analysis + Executive Dashboard + Lead Status Analytics
 """
 
-import os
 from fastapi import FastAPI, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic_settings import BaseSettings
@@ -16,37 +14,28 @@ from datetime import datetime
 from ml_engine import AIMLModelsEngine
 from geo_engine import GeographicalAnalysisEngine
 from dashboard_engine import DashboardEngine
+from lead_status_engine import LeadStatusEngine  # NEW IMPORT
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 # ============================================================================
-# SETTINGS (Updated for Render Deployment)
+# SETTINGS
 # ============================================================================
 
 class Settings(BaseSettings):
-    # Database Configuration with Default Values (for Render)
-    DATABASE_SERVER: str = Field(default="auto.resourceplus.app", env='DATABASE_SERVER')
-    DATABASE_NAME: str = Field(default="ResourcePlus_Dev_Live", env='DATABASE_NAME')
-    DATABASE_USERNAME: str = Field(default="ResourcePlus_BI", env='DATABASE_USERNAME')
-    DATABASE_PASSWORD: str = Field(default="kN5yT#9mP@7qL2wX", env='DATABASE_PASSWORD')
-    
-    # API Configuration
+    DATABASE_SERVER: str = Field(..., env='DATABASE_SERVER')
+    DATABASE_NAME: str = Field(..., env='DATABASE_NAME')
+    DATABASE_USERNAME: str = Field(..., env='DATABASE_USERNAME')
+    DATABASE_PASSWORD: str = Field(..., env='DATABASE_PASSWORD')
     API_TITLE: str = Field(default="Lead Intelligence API", env='API_TITLE')
-    API_VERSION: str = Field(default="3.0.0", env='API_VERSION')
+    API_VERSION: str = Field(default="4.0.0", env='API_VERSION')  # UPDATED VERSION
     
     class Config:
         env_file = ".env"
-        env_file_encoding = 'utf-8'
-        extra = "allow"
 
 settings = Settings()
-
-logger.info(f"🔧 Database Server: {settings.DATABASE_SERVER}")
-logger.info(f"🔧 Database: {settings.DATABASE_NAME}")
-
 
 # ============================================================================
 # FASTAPI APP
@@ -55,43 +44,19 @@ logger.info(f"🔧 Database: {settings.DATABASE_NAME}")
 app = FastAPI(
     title=settings.API_TITLE,
     version=settings.API_VERSION,
-    description="🎯 **Complete Lead Intelligence Platform** - ML Lead Scoring, Churn Prediction, Segmentation, Recommendations, Geographical Market Analysis + Executive Dashboard Analytics",
+    description="🎯 **Complete Lead Intelligence Platform** - ML Lead Scoring, Churn Prediction, Segmentation, Recommendations, Geographical Market Analysis, Executive Dashboard Analytics + Lead Status Analytics",
     docs_url="/docs",
-    redoc_url="/redoc",
-    contact={
-        "name": "Lead Intelligence Team",
-        "email": "support@leadintelligence.com"
-    }
+    redoc_url="/redoc"
 )
 
-# CORS (Enable Cross-Origin Requests for Frontend)
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For production, replace with your frontend domain
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-# ============================================================================
-# STARTUP & SHUTDOWN EVENTS
-# ============================================================================
-
-@app.on_event("startup")
-async def startup_event():
-    """Run on application startup"""
-    logger.info("=" * 60)
-    logger.info(f"🚀 {settings.API_TITLE} v{settings.API_VERSION} Starting...")
-    logger.info(f"📊 Database: {settings.DATABASE_SERVER}/{settings.DATABASE_NAME}")
-    logger.info("=" * 60)
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Run on application shutdown"""
-    logger.info(f"🛑 {settings.API_TITLE} shutting down...")
-
 
 # ============================================================================
 # ROOT & HEALTH ENDPOINTS
@@ -106,7 +71,7 @@ def root():
         "service": "Lead Intelligence API",
         "version": settings.API_VERSION,
         "status": "active",
-        "description": "Complete Lead Intelligence Platform with ML Models, Geographical Analysis + Executive Dashboard",
+        "description": "Complete Lead Intelligence Platform with ML Models, Geographical Analysis, Executive Dashboard + Lead Status Analytics",
         "documentation": "/docs",
         "features": {
             "ml_models": [
@@ -127,6 +92,15 @@ def root():
                 "Lead Conversion Funnel",
                 "Top Markets Analysis",
                 "Executive Summary"
+            ],
+            "lead_status_analytics": [  # NEW FEATURE
+                "Hot/Cold Lead Classification",
+                "Conversion Rate Analysis",
+                "Avg Days to Close",
+                "Status Distribution",
+                "Status Comparison Matrix",
+                "Status Trends Over Time",
+                "Agent Performance by Status"
             ]
         },
         "endpoints": {
@@ -150,11 +124,18 @@ def root():
             "dashboard_markets": "GET /api/v1/dashboard/markets?date_filter=year",
             "executive_summary": "GET /api/v1/executive-summary?date_filter=year",
             
+            # Lead Status Analytics Endpoints (NEW)
+            "lead_status_complete": "GET /api/v1/lead-status-analytics",
+            "lead_status_overview": "GET /api/v1/lead-status-analytics/overview",
+            "lead_status_distribution": "GET /api/v1/lead-status-analytics/distribution",
+            "lead_status_comparison": "GET /api/v1/lead-status-analytics/comparison",
+            "lead_status_trends": "GET /api/v1/lead-status-analytics/trends",
+            "lead_status_agent_performance": "GET /api/v1/lead-status-analytics/agent-performance",
+            
             # Health
             "health": "GET /health"
         }
     }
-
 
 @app.get("/health", tags=["Health"])
 def health_check():
@@ -186,7 +167,16 @@ def health_check():
         )
         dashboard_status = dashboard_engine.connect()
         
-        db_status = "connected" if (ml_status and geo_status and dashboard_status) else "disconnected"
+        # NEW: Check Lead Status Engine
+        lead_status_engine = LeadStatusEngine(
+            server=settings.DATABASE_SERVER,
+            database=settings.DATABASE_NAME,
+            username=settings.DATABASE_USERNAME,
+            password=settings.DATABASE_PASSWORD
+        )
+        lead_status_status = lead_status_engine.connect()
+        
+        db_status = "connected" if (ml_status and geo_status and dashboard_status and lead_status_status) else "disconnected"
         
         return {
             "status": "healthy",
@@ -194,7 +184,8 @@ def health_check():
             "database": db_status,
             "ml_engine": "operational" if ml_status else "unavailable",
             "geo_engine": "operational" if geo_status else "unavailable",
-            "dashboard_engine": "operational" if dashboard_status else "unavailable"
+            "dashboard_engine": "operational" if dashboard_status else "unavailable",
+            "lead_status_engine": "operational" if lead_status_status else "unavailable"  # NEW
         }
     except Exception as e:
         logger.error(f"Health check failed: {e}")
@@ -204,7 +195,6 @@ def health_check():
             "database": "disconnected",
             "error": str(e)
         }
-
 
 # ============================================================================
 # ML MODELS ENDPOINTS
@@ -254,7 +244,6 @@ def score_all_leads():
             detail=str(e)
         )
 
-
 @app.get("/api/v1/summary", tags=["ML Models"])
 def get_summary():
     """
@@ -285,7 +274,6 @@ def get_summary():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
-
 
 @app.get("/api/v1/top-leads/{limit}", tags=["ML Models"])
 def get_top_leads(limit: int = 10):
@@ -324,7 +312,6 @@ def get_top_leads(limit: int = 10):
             detail=str(e)
         )
 
-
 @app.get("/api/v1/at-risk-leads", tags=["ML Models"])
 def get_at_risk_leads():
     """
@@ -357,7 +344,6 @@ def get_at_risk_leads():
             detail=str(e)
         )
 
-
 @app.get("/api/v1/recommendations", tags=["ML Models"])
 def get_recommendations():
     """
@@ -389,7 +375,6 @@ def get_recommendations():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
-
 
 # ============================================================================
 # GEOGRAPHICAL ANALYSIS ENDPOINTS
@@ -439,7 +424,6 @@ def complete_geographical_analysis():
             detail=str(e)
         )
 
-
 @app.get("/api/v1/countries", tags=["Geographical Analysis"])
 def get_country_analysis():
     """
@@ -476,7 +460,6 @@ def get_country_analysis():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
-
 
 @app.get("/api/v1/market-recommendations", tags=["Geographical Analysis"])
 def get_market_recommendations():
@@ -515,7 +498,6 @@ def get_market_recommendations():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
-
 
 # ============================================================================
 # DASHBOARD ENDPOINTS
@@ -567,7 +549,6 @@ def get_complete_dashboard(
             detail=str(e)
         )
 
-
 @app.get("/api/v1/dashboard/kpis", tags=["Dashboard"])
 def get_dashboard_kpis(date_filter: str = Query(default='year')):
     """
@@ -584,7 +565,6 @@ def get_dashboard_kpis(date_filter: str = Query(default='year')):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.get("/api/v1/dashboard/trends", tags=["Dashboard"])
 def get_dashboard_trends(date_filter: str = Query(default='year')):
@@ -603,7 +583,6 @@ def get_dashboard_trends(date_filter: str = Query(default='year')):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/v1/dashboard/funnel", tags=["Dashboard"])
 def get_dashboard_funnel(date_filter: str = Query(default='year')):
     """
@@ -616,14 +595,11 @@ def get_dashboard_funnel(date_filter: str = Query(default='year')):
         return {
             'status': 'success',
             'funnel': dashboard['funnel'],
-            'total_leads': dashboard.get('total_leads', 0),
-            'total_converted': dashboard.get('total_converted', 0),
-            'overall_conversion_rate': dashboard.get('overall_conversion_rate', 0.0),
+            'total_leads': sum([stage['count'] for stage in dashboard['funnel']]),
             'timestamp': datetime.now().isoformat()
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.get("/api/v1/dashboard/markets", tags=["Dashboard"])
 def get_dashboard_markets(date_filter: str = Query(default='year')):
@@ -641,11 +617,6 @@ def get_dashboard_markets(date_filter: str = Query(default='year')):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-# ============================================================================
-# EXECUTIVE SUMMARY ENDPOINT
-# ============================================================================
 
 @app.get("/api/v1/executive-summary", tags=["Executive Summary"])
 def get_executive_summary(
@@ -695,19 +666,196 @@ def get_executive_summary(
             detail=str(e)
         )
 
+# ============================================================================
+# LEAD STATUS ANALYTICS ENDPOINTS (NEW SECTION)
+# ============================================================================
+
+@app.get("/api/v1/lead-status-analytics", tags=["Lead Status Analytics"])
+def get_lead_status_analytics():
+    """
+    📊 **Complete Lead Status Analytics**
+    
+    **Response Time**: ~3-5 seconds
+    
+    **Returns**:
+    - Overview (Hot/Cold/Won counts, conversion rate, avg days to close)
+    - Key Metrics (Total leads, won deals, win rate)
+    - Top 3 Statuses
+    - Status Distribution (all statuses with counts and percentages)
+    - Status Comparison Matrix (detailed metrics with health scores)
+    - Trends (status progression over last 6 months)
+    - Agent Performance (if agents are assigned)
+    
+    Perfect for complete lead pipeline analysis!
+    """
+    try:
+        lead_status_engine = LeadStatusEngine(
+            server=settings.DATABASE_SERVER,
+            database=settings.DATABASE_NAME,
+            username=settings.DATABASE_USERNAME,
+            password=settings.DATABASE_PASSWORD
+        )
+        
+        results = lead_status_engine.get_complete_analytics()
+        
+        if results.get('status') == 'failed':
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=results.get('error', 'Lead status analytics generation failed')
+            )
+        
+        return results
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Lead status analytics failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+@app.get("/api/v1/lead-status-analytics/overview", tags=["Lead Status Analytics"])
+def get_lead_status_overview():
+    """
+    📈 **Quick Overview** - Hot/Cold leads and conversion metrics only
+    
+    **Response Time**: ~3 seconds
+    
+    **Returns**: Hot leads, cold leads, won leads, conversion rate, avg days to close
+    """
+    try:
+        lead_status_engine = LeadStatusEngine(
+            server=settings.DATABASE_SERVER,
+            database=settings.DATABASE_NAME,
+            username=settings.DATABASE_USERNAME,
+            password=settings.DATABASE_PASSWORD
+        )
+        
+        results = lead_status_engine.get_overview_only()
+        
+        if results.get('status') == 'failed':
+            raise HTTPException(status_code=500, detail=results.get('error'))
+        
+        return results
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/lead-status-analytics/distribution", tags=["Lead Status Analytics"])
+def get_status_distribution():
+    """
+    📊 **Status Distribution** - Lead count by status with percentages
+    
+    **Response Time**: ~3 seconds
+    """
+    try:
+        lead_status_engine = LeadStatusEngine(
+            server=settings.DATABASE_SERVER,
+            database=settings.DATABASE_NAME,
+            username=settings.DATABASE_USERNAME,
+            password=settings.DATABASE_PASSWORD
+        )
+        
+        results = lead_status_engine.get_status_distribution()
+        
+        if results.get('status') == 'failed':
+            raise HTTPException(status_code=500, detail=results.get('error'))
+        
+        return results
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/lead-status-analytics/comparison", tags=["Lead Status Analytics"])
+def get_status_comparison():
+    """
+    📊 **Status Comparison Matrix** - Detailed status metrics with health scores
+    
+    **Response Time**: ~3 seconds
+    """
+    try:
+        lead_status_engine = LeadStatusEngine(
+            server=settings.DATABASE_SERVER,
+            database=settings.DATABASE_NAME,
+            username=settings.DATABASE_USERNAME,
+            password=settings.DATABASE_PASSWORD
+        )
+        
+        results = lead_status_engine.get_status_comparison()
+        
+        if results.get('status') == 'failed':
+            raise HTTPException(status_code=500, detail=results.get('error'))
+        
+        return results
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/lead-status-analytics/trends", tags=["Lead Status Analytics"])
+def get_status_trends():
+    """
+    📈 **Status Trends** - Status progression over time (last 6 months)
+    
+    **Response Time**: ~3 seconds
+    """
+    try:
+        lead_status_engine = LeadStatusEngine(
+            server=settings.DATABASE_SERVER,
+            database=settings.DATABASE_NAME,
+            username=settings.DATABASE_USERNAME,
+            password=settings.DATABASE_PASSWORD
+        )
+        
+        results = lead_status_engine.get_trends()
+        
+        if results.get('status') == 'failed':
+            raise HTTPException(status_code=500, detail=results.get('error'))
+        
+        return results
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/lead-status-analytics/agent-performance", tags=["Lead Status Analytics"])
+def get_agent_performance():
+    """
+    👥 **Agent Performance** - Performance metrics by assigned agents
+    
+    **Response Time**: ~3 seconds
+    """
+    try:
+        lead_status_engine = LeadStatusEngine(
+            server=settings.DATABASE_SERVER,
+            database=settings.DATABASE_NAME,
+            username=settings.DATABASE_USERNAME,
+            password=settings.DATABASE_PASSWORD
+        )
+        
+        results = lead_status_engine.get_agent_performance()
+        
+        if results.get('status') == 'failed':
+            raise HTTPException(status_code=500, detail=results.get('error'))
+        
+        return results
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================
-# RUN SERVER (Updated for Render Deployment)
+# RUN SERVER
 # ============================================================================
 
 if __name__ == "__main__":
     import uvicorn
-    # Use PORT environment variable from Render, fallback to 8000 for local development
-    port = int(os.environ.get("PORT", 8000))
-    logger.info(f"🚀 Starting server on port {port}")
-    uvicorn.run(
-        app, 
-        host="0.0.0.0", 
-        port=port, 
-        log_level="info"
-    )
+    uvicorn.run(app, host="0.0.0.0", port=8000)
